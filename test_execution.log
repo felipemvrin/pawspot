@@ -1,0 +1,7 @@
+
+> pawspot@0.0.0 test
+> ng test --watch=false --no-progress --browsers=ChromeHeadless
+
+The following packages are required but were not found:
+  - The "browsers" option requires either "@vitest/browser-playwright", "@vitest/browser-webdriverio", or "@vitest/browser-preview" to be installed.
+Please install the missing packages and rerun the test command.

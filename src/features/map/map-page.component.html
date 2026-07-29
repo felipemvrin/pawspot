@@ -1,0 +1,107 @@
+<main class="map-page">
+  <section class="map-stage" aria-label="Mapa de lugares pet friendly">
+    <div #mapContainer class="map-canvas" aria-label="Mapa real de OpenStreetMap"></div>
+
+    <header class="search-shell" aria-label="Buscador principal">
+      <button
+        class="search-shell__icon-button"
+        type="button"
+        aria-label="Abrir historial de búsqueda"
+      >
+        Historial
+      </button>
+
+      <label class="search-shell__input-wrapper">
+        <span class="sr-only">Buscar lugares</span>
+        <input
+          class="search-shell__input"
+          type="search"
+          placeholder="Buscar parques, cafés, playas o veterinarias"
+          aria-label="Buscar lugares en el mapa"
+        />
+      </label>
+
+      <button
+        class="search-shell__icon-button search-shell__icon-button--primary"
+        type="button"
+        aria-label="Abrir favoritos"
+      >
+        Favoritos
+      </button>
+    </header>
+
+    <section class="filter-chips" aria-label="Filtros rápidos">
+      @for (filter of quickFilters(); track filter.label) {
+        <button class="filter-chip" type="button" [attr.aria-label]="filter.ariaLabel">
+          {{ filter.label }}
+        </button>
+      }
+    </section>
+
+    <aside class="floating-actions" aria-label="Controles del mapa">
+      <button
+        class="floating-action"
+        type="button"
+        aria-label="Mostrar mi ubicación"
+        (click)="locateUser()"
+      >
+        Mi ubicación
+      </button>
+
+      <button
+        class="floating-action"
+        type="button"
+        aria-label="Mostrar resultados en el mapa"
+        (click)="focusMarkers()"
+      >
+        Filtros
+      </button>
+
+      <button
+        class="floating-action"
+        type="button"
+        aria-label="Cambiar capa del mapa"
+        (click)="toggleLayers()"
+      >
+        Capas
+      </button>
+
+      <div class="floating-zoom" aria-label="Controles de zoom">
+        <button
+          class="floating-action floating-action--zoom"
+          type="button"
+          aria-label="Acercar mapa"
+          (click)="zoomIn()"
+        >
+          +
+        </button>
+        <button
+          class="floating-action floating-action--zoom"
+          type="button"
+          aria-label="Alejar mapa"
+          (click)="zoomOut()"
+        >
+          -
+        </button>
+      </div>
+    </aside>
+
+    <p class="map-status" aria-live="polite">{{ mapStatus() }}</p>
+
+    <section class="map-legend" aria-label="Categorías del mapa">
+      <h1 class="map-legend__title">PawSpot</h1>
+      <p class="map-legend__subtitle">
+        El mapa vive aquí. Las capas, filtros y resultados flotan encima.
+      </p>
+
+      <div class="map-legend__items">
+        <span>🌳 Parque</span>
+        <span>🍽 Restaurante</span>
+        <span>☕ Café</span>
+        <span>🐶 Pet Friendly</span>
+        <span>🐾 Veterinaria</span>
+        <span>🏖 Playa</span>
+      </div>
+    </section>
+  </section>
+</main>

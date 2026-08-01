@@ -15,9 +15,21 @@ import 'leaflet.markercluster';
 type QuickFilter = {
   label: string;
   ariaLabel: string;
+  token: QuickFilterToken;
 };
 
-type PlaceCategory = 'park' | 'restaurant' | 'cafe' | 'petFriendly' | 'veterinary' | 'beach';
+type PlaceCategory =
+  | 'park'
+  | 'restaurant'
+  | 'cafe'
+  | 'petFriendly'
+  | 'veterinary'
+  | 'trail'
+  | 'hotel'
+  | 'shopping'
+  | 'hairSalon';
+
+type QuickFilterToken = PlaceCategory | 'topRated' | 'nearby';
 
 type PlaceMarker = {
   name: string;
@@ -28,6 +40,27 @@ type PlaceMarker = {
   lng: number;
 };
 
+type MapStatusTone = 'info' | 'success' | 'error';
+
+type MapStatusState = {
+  message: string;
+  tone: MapStatusTone;
+  id: number;
+};
+
+type MapSkin = {
+  name: string;
+  layer: L.TileLayer;
+};
+
+type SearchSuggestion = {
+  label: string;
+  lat: number;
+  lng: number;
+};
+
+type NearbySource = 'search' | 'location';
+
 @Component({
   selector: 'app-map-page',
   standalone: true,
@@ -36,8 +69,13 @@ type PlaceMarker = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MapPageComponent implements AfterViewInit {
+  private static readonly STATUS_AUTO_DISMISS_MS = 6000;
+  private static readonly RECOLETA_CENTER: [number, number] = [-33.4166, -70.6438];
+
   @ViewChild('mapContainer', { static: true })
   private readonly mapContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('mapStatusElement')
+  private mapStatusElement?: ElementRef<HTMLParagraphElement>;
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly zone = inject(NgZone);
@@ -46,31 +84,123 @@ export class MapPageComponent implements AfterViewInit {
   private userMarker: L.CircleMarker | null = null;
   private userAccuracyCircle: L.Circle | null = null;
   private clusterLayer: L.MarkerClusterGroup | null = null;
-  private readonly standardLayer = L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  private readonly mapSkins: MapSkin[] = [
     {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
+      name: 'Carto Positron',
+      layer: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      }),
     },
-  );
-  private readonly humanitarianLayer = L.tileLayer(
-    'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
     {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors, Humanitarian style',
+      name: 'Alidade Smooth',
+      layer: L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        attribution: '&copy; Stadia Maps &copy; OpenMapTiles &copy; OpenStreetMap contributors',
+      }),
     },
-  );
-  private isHumanitarianLayer = false;
+    {
+      name: 'Carto Voyager',
+      layer: L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        {
+          maxZoom: 20,
+          subdomains: 'abcd',
+          attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        },
+      ),
+    },
+  ];
+  private currentSkinIndex = 0;
+  private isLocatingUser = false;
+  private statusSequence = 0;
+  private statusDismissTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private statusHideAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private searchDebounceTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private searchAbortController: AbortController | null = null;
+  private lastKnownUserLocation: L.LatLng | null = null;
+  private searchResultMarker: L.Marker | null = null;
+  private readonly categoryMetadata: Record<PlaceCategory, { emoji: string; color: string }> = {
+    park: { emoji: '🌳', color: '#7ED957' },
+    restaurant: { emoji: '🍽', color: '#FF9F43' },
+    cafe: { emoji: '☕', color: '#C89B72' },
+    petFriendly: { emoji: '🐶', color: '#4D96FF' },
+    veterinary: { emoji: '🏥', color: '#FF6B6B' },
+    trail: { emoji: '🥾', color: '#2E8B57' },
+    hotel: { emoji: '🏨', color: '#8B5CF6' },
+    shopping: { emoji: '🛒', color: '#FFD700' },
+    hairSalon: { emoji: '✂️', color: '#FF69B4' },
+  };
+  private readonly places: PlaceMarker[] = [
+    {
+      name: 'Parque Canino Recoleta',
+      category: 'park',
+      rating: 4.8,
+      address: 'Santos Dumont con Av. Perú (referencia)',
+      lat: -33.4166,
+      lng: -70.6438,
+    },
+    {
+      name: 'Café Pet Bellavista Norte',
+      category: 'cafe',
+      rating: 4.6,
+      address: 'Av. Perú, Recoleta',
+      lat: -33.4157,
+      lng: -70.6426,
+    },
+    {
+      name: 'Clínica Veterinaria Recoleta',
+      category: 'veterinary',
+      rating: 4.7,
+      address: 'Sector Patronato',
+      lat: -33.4178,
+      lng: -70.6461,
+    },
+    {
+      name: 'Sendero Urbano San Cristóbal',
+      category: 'trail',
+      rating: 4.5,
+      address: 'Acceso cercano a Recoleta',
+      lat: -33.4149,
+      lng: -70.6412,
+    },
+    {
+      name: 'Hotel Pet Friendly Recoleta',
+      category: 'hotel',
+      rating: 4.4,
+      address: 'Entorno Bellavista-Recoleta',
+      lat: -33.4187,
+      lng: -70.6423,
+    },
+  ];
 
-  protected readonly mapStatus = signal('Cargando mapa real de OpenStreetMap...');
+  protected readonly mapStatus = signal<MapStatusState>({
+    message: 'Cargando mapa real de OpenStreetMap...',
+    tone: 'info',
+    id: 0,
+  });
+  protected readonly isStatusVisible = signal(true);
+  protected readonly isStatusLeaving = signal(false);
+  protected readonly areFiltersVisible = signal(false);
+  protected readonly searchQuery = signal('');
+  protected readonly searchSuggestions = signal<SearchSuggestion[]>([]);
+  protected readonly isSuggestionsOpen = signal(false);
+  protected readonly isSearchingSuggestions = signal(false);
+  protected readonly isMapLegendVisible = signal(false);
+  protected readonly nearbyPlacesCount = signal(0);
 
   protected readonly quickFilters = signal<QuickFilter[]>([
-    { label: '🐶 Pet Friendly', ariaLabel: 'Filter pet friendly places' },
-    { label: '🌳 Parques', ariaLabel: 'Filter parks' },
-    { label: '🍽 Restaurantes', ariaLabel: 'Filter restaurants' },
-    { label: '☕ Cafés', ariaLabel: 'Filter cafes' },
-    { label: '⭐ Mejor valorados', ariaLabel: 'Filter top rated places' },
-    { label: '📍 Cerca de mí', ariaLabel: 'Filter places near me' },
+    { label: '🌳 Parques', ariaLabel: 'Filter parks', token: 'park' },
+    { label: '🥾 Senderos', ariaLabel: 'Filter trails', token: 'trail' },
+    { label: '☕ Cafés', ariaLabel: 'Filter cafes', token: 'cafe' },
+    { label: '🍽 Restaurantes', ariaLabel: 'Filter restaurants', token: 'restaurant' },
+    { label: '🏥 Veterinaria', ariaLabel: 'Filter veterinary clinics', token: 'veterinary' },
+    { label: '🛒 Tienda Mascotas', ariaLabel: 'Filter pet stores', token: 'shopping' },
+    { label: '✂️ Peluquería Canina', ariaLabel: 'Filter dog grooming', token: 'hairSalon' },
+    { label: '🏨 Hotel Pet Friendly', ariaLabel: 'Filter pet friendly hotels', token: 'hotel' },
+    { label: '⭐ Mejor valorados', ariaLabel: 'Filter top rated places', token: 'topRated' },
+    { label: '📍 Cerca de mí', ariaLabel: 'Filter places near me', token: 'nearby' },
   ]);
 
   ngAfterViewInit(): void {
@@ -78,31 +208,157 @@ export class MapPageComponent implements AfterViewInit {
     this.addClusteredMarkers();
 
     this.destroyRef.onDestroy(() => {
+      this.clearStatusDismissTimeout();
+      this.clearStatusHideAnimationTimeout();
+      this.clearSearchDebounceTimeout();
+      this.cancelSearchRequest();
       this.map?.remove();
       this.map = null;
     });
   }
 
-  protected locateUser(): void {
+  protected onSearchInput(query: string): void {
+    this.searchQuery.set(query);
+    this.clearSearchDebounceTimeout();
+    this.cancelSearchRequest();
+
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 5) {
+      this.searchSuggestions.set([]);
+      this.isSuggestionsOpen.set(false);
+      this.isSearchingSuggestions.set(false);
+      return;
+    }
+
+    this.isSearchingSuggestions.set(true);
+    this.searchDebounceTimeoutId = setTimeout(() => {
+      this.fetchSearchSuggestions(normalizedQuery);
+    }, 280);
+  }
+
+  protected onSearchSubmit(event?: Event): void {
+    event?.preventDefault();
+    this.isSuggestionsOpen.set(false);
+    this.locateUser('search');
+  }
+
+  protected onSearchBlur(): void {
+    setTimeout(() => {
+      this.isSuggestionsOpen.set(false);
+    }, 120);
+  }
+
+  protected selectSuggestion(suggestion: SearchSuggestion): void {
+    this.searchQuery.set(suggestion.label);
+    this.isSuggestionsOpen.set(false);
+
     if (!this.map) {
       return;
     }
 
-    if (!('geolocation' in navigator)) {
-      this.mapStatus.set('Tu navegador no soporta geolocalización.');
+    const suggestionLocation = L.latLng(suggestion.lat, suggestion.lng);
+    this.searchResultMarker?.remove();
+    this.searchResultMarker = L.marker(suggestionLocation)
+      .addTo(this.map)
+      .bindPopup(suggestion.label);
+    this.map.setView(suggestionLocation, 15, { animate: true });
+    this.searchResultMarker.openPopup();
+    this.updateLegendFromNearbyResults(suggestionLocation, 'search');
+    this.setStatusSuccess('Ubicación sugerida encontrada.');
+  }
+
+  protected locateUser(source: NearbySource = 'location'): void {
+    if (!this.map || this.isLocatingUser) {
       return;
     }
 
-    this.mapStatus.set('Buscando tu ubicación actual...');
-    this.map.locate({
-      enableHighAccuracy: true,
-      maxZoom: 16,
-      setView: true,
-      timeout: 10000,
-    });
+    if (!('geolocation' in navigator)) {
+      this.setStatusError('Tu navegador no soporta geolocalización.');
+      return;
+    }
+
+    this.isLocatingUser = true;
+    this.setStatusInfo('Solicitando permisos de ubicación...');
+
+    const geolocation = navigator.geolocation;
+    const onSuccess = (position: GeolocationPosition) => {
+      this.zone.run(() => {
+        const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+        this.paintUserLocation({ latlng, accuracy: position.coords.accuracy } as L.LocationEvent);
+        this.map?.setView(latlng, 16, { animate: true });
+        this.updateLegendFromNearbyResults(latlng, source);
+        this.setStatusSuccess('Ubicación actual detectada con éxito.');
+        this.isLocatingUser = false;
+      });
+    };
+
+    const onError = (error: GeolocationPositionError) => {
+      this.zone.run(() => {
+        if (error.code === error.PERMISSION_DENIED) {
+          this.setStatusError(
+            'Permiso de ubicación denegado. Actívalo en el navegador para centrar el mapa.',
+          );
+        } else if (error.code === error.TIMEOUT) {
+          this.setStatusError('La ubicación tardó demasiado. Intenta nuevamente.');
+        } else {
+          this.setStatusError(
+            'No fue posible obtener tu ubicación. Verifica permisos del navegador.',
+          );
+        }
+
+        this.isLocatingUser = false;
+      });
+    };
+
+    const requestPosition = () => {
+      this.setStatusInfo('Buscando tu ubicación actual...');
+      geolocation.getCurrentPosition(onSuccess, onError, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      });
+    };
+
+    if (!('permissions' in navigator)) {
+      requestPosition();
+      return;
+    }
+
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((permissionStatus) => {
+        this.zone.run(() => {
+          if (permissionStatus.state === 'denied') {
+            this.setStatusError(
+              'Permiso de ubicación bloqueado. Habilítalo en el navegador para continuar.',
+            );
+            this.isLocatingUser = false;
+            return;
+          }
+
+          requestPosition();
+        });
+      })
+      .catch(() => {
+        this.zone.run(() => {
+          requestPosition();
+        });
+      });
   }
 
-  protected focusMarkers(): void {
+  protected toggleFilters(): void {
+    const nextState = !this.areFiltersVisible();
+    this.areFiltersVisible.set(nextState);
+
+    if (!nextState) {
+      this.setStatusInfo('Filtros rápidos ocultos.');
+      return;
+    }
+
+    this.focusMarkers();
+  }
+
+  private focusMarkers(): void {
     if (!this.map || !this.clusterLayer) {
       return;
     }
@@ -110,7 +366,7 @@ export class MapPageComponent implements AfterViewInit {
     const bounds = this.clusterLayer.getBounds();
     if (bounds.isValid()) {
       this.map.fitBounds(bounds.pad(0.2));
-      this.mapStatus.set('Mostrando resultados pet friendly en el mapa.');
+      this.setStatusInfo('Mostrando resultados pet friendly en el mapa.');
     }
   }
 
@@ -119,17 +375,14 @@ export class MapPageComponent implements AfterViewInit {
       return;
     }
 
-    if (this.isHumanitarianLayer) {
-      this.map.removeLayer(this.humanitarianLayer);
-      this.standardLayer.addTo(this.map);
-      this.mapStatus.set('Capa estándar de OpenStreetMap activa.');
-    } else {
-      this.map.removeLayer(this.standardLayer);
-      this.humanitarianLayer.addTo(this.map);
-      this.mapStatus.set('Capa Humanitarian de OpenStreetMap activa.');
-    }
+    const currentSkin = this.mapSkins[this.currentSkinIndex];
+    this.map.removeLayer(currentSkin.layer);
 
-    this.isHumanitarianLayer = !this.isHumanitarianLayer;
+    this.currentSkinIndex = (this.currentSkinIndex + 1) % this.mapSkins.length;
+    const nextSkin = this.mapSkins[this.currentSkinIndex];
+    nextSkin.layer.addTo(this.map);
+
+    this.setStatusInfo(`Capa ${nextSkin.name} activa.`);
   }
 
   protected zoomIn(): void {
@@ -142,36 +395,103 @@ export class MapPageComponent implements AfterViewInit {
 
   private initializeMap(): void {
     this.map = L.map(this.mapContainer.nativeElement, {
-      center: [4.711, -74.0721],
-      zoom: 12,
+      center: MapPageComponent.RECOLETA_CENTER,
+      zoom: 15,
       zoomControl: false,
       preferCanvas: true,
     });
 
-    this.standardLayer.addTo(this.map);
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+    this.mapSkins[this.currentSkinIndex].layer.addTo(this.map);
 
-    this.map.on('locationfound', (event: L.LocationEvent) => {
-      this.zone.run(() => {
-        this.paintUserLocation(event);
-        this.mapStatus.set('Ubicación actual detectada con éxito.');
-      });
-    });
-
-    this.map.on('locationerror', () => {
-      this.zone.run(() => {
-        this.mapStatus.set('No fue posible obtener tu ubicación. Verifica permisos del navegador.');
-      });
-    });
-
-    this.mapStatus.set('Mapa cargado. Ya puedes explorar lugares pet friendly.');
+    this.setStatusInfo('Mapa centrado en Santos Dumont con Av. Perú.');
   }
 
-  private paintUserLocation(event: L.LocationEvent): void {
+  private setStatusInfo(message: string): void {
+    this.setStatus(message, 'info');
+  }
+
+  private setStatusError(message: string): void {
+    this.setStatus(message, 'error');
+  }
+
+  private setStatusSuccess(message: string): void {
+    this.setStatus(message, 'success');
+  }
+
+  private setStatus(message: string, tone: MapStatusTone): void {
+    this.clearStatusDismissTimeout();
+    this.clearStatusHideAnimationTimeout();
+    this.isStatusVisible.set(true);
+    this.isStatusLeaving.set(false);
+
+    const id = ++this.statusSequence;
+    this.mapStatus.set({ message, tone, id });
+    this.playStatusAnimation();
+
+    this.statusDismissTimeoutId = setTimeout(() => {
+      const currentStatus = this.mapStatus();
+      if (currentStatus.id === id) {
+        this.dismissStatusWithFade(id);
+      }
+      this.statusDismissTimeoutId = null;
+    }, MapPageComponent.STATUS_AUTO_DISMISS_MS);
+  }
+
+  private clearStatusDismissTimeout(): void {
+    if (this.statusDismissTimeoutId) {
+      clearTimeout(this.statusDismissTimeoutId);
+      this.statusDismissTimeoutId = null;
+    }
+  }
+
+  private clearStatusHideAnimationTimeout(): void {
+    if (this.statusHideAnimationTimeoutId) {
+      clearTimeout(this.statusHideAnimationTimeoutId);
+      this.statusHideAnimationTimeoutId = null;
+    }
+  }
+
+  private dismissStatusWithFade(expectedId: number): void {
+    this.clearStatusHideAnimationTimeout();
+    this.isStatusLeaving.set(true);
+
+    this.statusHideAnimationTimeoutId = setTimeout(() => {
+      const currentStatus = this.mapStatus();
+      if (currentStatus.id !== expectedId) {
+        return;
+      }
+
+      this.isStatusVisible.set(false);
+      this.isStatusLeaving.set(false);
+      this.mapStatus.set({ message: '', tone: 'info', id: ++this.statusSequence });
+      this.statusHideAnimationTimeoutId = null;
+    }, 260);
+  }
+
+  private playStatusAnimation(): void {
+    const statusElement = this.mapStatusElement?.nativeElement;
+    if (!statusElement) {
+      return;
+    }
+
+    statusElement.animate(
+      [
+        { opacity: 0.3, transform: 'translate3d(-50%, 0.5rem, 0) scale(0.98)' },
+        { opacity: 1, transform: 'translate3d(-50%, 0, 0) scale(1)' },
+      ],
+      {
+        duration: 280,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      },
+    );
+  }
+
+  private paintUserLocation(location: { latlng: L.LatLng; accuracy: number }): void {
+    this.lastKnownUserLocation = location.latlng;
     this.userMarker?.remove();
     this.userAccuracyCircle?.remove();
 
-    this.userMarker = L.circleMarker(event.latlng, {
+    this.userMarker = L.circleMarker(location.latlng, {
       radius: 8,
       weight: 2,
       color: '#FFFFFF',
@@ -181,8 +501,8 @@ export class MapPageComponent implements AfterViewInit {
       .addTo(this.map as L.Map)
       .bindPopup('Tu ubicación actual');
 
-    this.userAccuracyCircle = L.circle(event.latlng, {
-      radius: event.accuracy,
+    this.userAccuracyCircle = L.circle(location.latlng, {
+      radius: location.accuracy,
       weight: 1,
       color: '#2F855A',
       fillColor: '#2F855A',
@@ -195,64 +515,13 @@ export class MapPageComponent implements AfterViewInit {
       return;
     }
 
-    const places: PlaceMarker[] = [
-      {
-        name: 'Parque de los Novios',
-        category: 'park',
-        rating: 4.7,
-        address: 'Av. Calle 63 #45-10',
-        lat: 4.6579,
-        lng: -74.0912,
-      },
-      {
-        name: 'Cafe Moka Pet',
-        category: 'cafe',
-        rating: 4.6,
-        address: 'Chapinero Alto',
-        lat: 4.6473,
-        lng: -74.0609,
-      },
-      {
-        name: 'VetCare 24h',
-        category: 'veterinary',
-        rating: 4.8,
-        address: 'Calle 116 #15-42',
-        lat: 4.6986,
-        lng: -74.045,
-      },
-      {
-        name: 'Bistro Patitas',
-        category: 'restaurant',
-        rating: 4.5,
-        address: 'Usaquen',
-        lat: 4.7028,
-        lng: -74.0324,
-      },
-      {
-        name: 'Playa Canina Simulada',
-        category: 'beach',
-        rating: 4.3,
-        address: 'Zona recreativa',
-        lat: 4.7364,
-        lng: -74.0822,
-      },
-      {
-        name: 'Zona Pet Friendly 85',
-        category: 'petFriendly',
-        rating: 4.6,
-        address: 'Zona T',
-        lat: 4.6674,
-        lng: -74.0535,
-      },
-    ];
-
     this.clusterLayer = L.markerClusterGroup({
       maxClusterRadius: 46,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
     });
 
-    places.forEach((place) => {
+    this.places.forEach((place) => {
       const marker = L.marker([place.lat, place.lng], {
         icon: this.buildCategoryIcon(place.category),
       }).bindPopup(this.buildPopup(place));
@@ -263,17 +532,112 @@ export class MapPageComponent implements AfterViewInit {
     this.map.addLayer(this.clusterLayer);
   }
 
-  private buildCategoryIcon(category: PlaceCategory): L.DivIcon {
-    const metadata: Record<PlaceCategory, { emoji: string; color: string }> = {
-      park: { emoji: '🌳', color: '#22C55E' },
-      restaurant: { emoji: '🍽', color: '#F59E0B' },
-      cafe: { emoji: '☕', color: '#7C3AED' },
-      petFriendly: { emoji: '🐶', color: '#2F855A' },
-      veterinary: { emoji: '🐾', color: '#EF4444' },
-      beach: { emoji: '🏖', color: '#3B82F6' },
-    };
+  private async fetchSearchSuggestions(query: string): Promise<void> {
+    this.cancelSearchRequest();
+    this.searchAbortController = new AbortController();
 
-    const icon = metadata[category];
+    try {
+      const center =
+        this.lastKnownUserLocation ?? this.map?.getCenter() ?? L.latLng(4.711, -74.0721);
+      const delta = 0.2;
+      const viewbox = `${center.lng - delta},${center.lat + delta},${center.lng + delta},${center.lat - delta}`;
+
+      const searchParams = new URLSearchParams({
+        q: query,
+        format: 'jsonv2',
+        limit: '6',
+        bounded: '1',
+        viewbox,
+        'accept-language': 'es',
+      });
+
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?${searchParams.toString()}`,
+        {
+          signal: this.searchAbortController.signal,
+          headers: {
+            Accept: 'application/json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error('No se pudo consultar Nominatim.');
+      }
+
+      const results = (await response.json()) as Array<{
+        display_name: string;
+        lat: string;
+        lon: string;
+      }>;
+
+      const suggestions = results
+        .map((result) => ({
+          label: result.display_name,
+          lat: Number(result.lat),
+          lng: Number(result.lon),
+        }))
+        .filter((result) => Number.isFinite(result.lat) && Number.isFinite(result.lng));
+
+      this.searchSuggestions.set(suggestions);
+      this.isSuggestionsOpen.set(suggestions.length > 0);
+
+      if (suggestions.length === 0) {
+        this.setStatusInfo('No encontramos sugerencias cercanas para ese texto.');
+      }
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        this.setStatusError('No fue posible obtener sugerencias de búsqueda.');
+      }
+    } finally {
+      this.isSearchingSuggestions.set(false);
+      this.searchAbortController = null;
+    }
+  }
+
+  private clearSearchDebounceTimeout(): void {
+    if (this.searchDebounceTimeoutId) {
+      clearTimeout(this.searchDebounceTimeoutId);
+      this.searchDebounceTimeoutId = null;
+    }
+  }
+
+  private cancelSearchRequest(): void {
+    if (this.searchAbortController) {
+      this.searchAbortController.abort();
+      this.searchAbortController = null;
+    }
+  }
+
+  private updateLegendFromNearbyResults(center: L.LatLng, source: NearbySource): void {
+    const nearbyCount = this.getNearbyPlacesCount(center);
+    this.nearbyPlacesCount.set(nearbyCount);
+
+    if (nearbyCount > 0) {
+      this.isMapLegendVisible.set(true);
+      return;
+    }
+
+    this.isMapLegendVisible.set(false);
+
+    if (source === 'search') {
+      this.setStatusInfo('No encontramos lugares cercanos para la búsqueda.');
+      return;
+    }
+
+    this.setStatusInfo('No encontramos lugares cercanos a tu ubicación.');
+  }
+
+  private getNearbyPlacesCount(center: L.LatLng): number {
+    const nearbyThresholdMeters = 2000;
+
+    return this.places.filter(
+      (place) => center.distanceTo(L.latLng(place.lat, place.lng)) <= nearbyThresholdMeters,
+    ).length;
+  }
+
+  private buildCategoryIcon(category: PlaceCategory): L.DivIcon {
+    const icon = this.categoryMetadata[category];
 
     return L.divIcon({
       className: 'pawspot-marker-icon',

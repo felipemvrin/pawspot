@@ -9,8 +9,12 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import * as L from 'leaflet';
 import 'leaflet.markercluster';
+
+import { Place, PlaceCategory } from '../../core/models/place.model';
+import { PlaceCatalogService } from '../../core/services/place-catalog.service';
 
 type QuickFilter = {
   label: string;
@@ -18,27 +22,7 @@ type QuickFilter = {
   token: QuickFilterToken;
 };
 
-type PlaceCategory =
-  | 'park'
-  | 'restaurant'
-  | 'cafe'
-  | 'petFriendly'
-  | 'veterinary'
-  | 'trail'
-  | 'hotel'
-  | 'shopping'
-  | 'hairSalon';
-
 type QuickFilterToken = PlaceCategory | 'topRated' | 'nearby';
-
-type PlaceMarker = {
-  name: string;
-  category: PlaceCategory;
-  rating: number;
-  address: string;
-  lat: number;
-  lng: number;
-};
 
 type MapStatusTone = 'info' | 'success' | 'error';
 
@@ -79,6 +63,7 @@ export class MapPageComponent implements AfterViewInit {
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly zone = inject(NgZone);
+  private readonly placeCatalog = inject(PlaceCatalogService);
 
   private map: L.Map | null = null;
   private userMarker: L.CircleMarker | null = null;
@@ -132,48 +117,7 @@ export class MapPageComponent implements AfterViewInit {
     shopping: { emoji: '🛒', color: '#FFD700' },
     hairSalon: { emoji: '✂️', color: '#FF69B4' },
   };
-  private readonly places: PlaceMarker[] = [
-    {
-      name: 'Parque Canino Recoleta',
-      category: 'park',
-      rating: 4.8,
-      address: 'Santos Dumont con Av. Perú (referencia)',
-      lat: -33.4166,
-      lng: -70.6438,
-    },
-    {
-      name: 'Café Pet Bellavista Norte',
-      category: 'cafe',
-      rating: 4.6,
-      address: 'Av. Perú, Recoleta',
-      lat: -33.4157,
-      lng: -70.6426,
-    },
-    {
-      name: 'Clínica Veterinaria Recoleta',
-      category: 'veterinary',
-      rating: 4.7,
-      address: 'Sector Patronato',
-      lat: -33.4178,
-      lng: -70.6461,
-    },
-    {
-      name: 'Sendero Urbano San Cristóbal',
-      category: 'trail',
-      rating: 4.5,
-      address: 'Acceso cercano a Recoleta',
-      lat: -33.4149,
-      lng: -70.6412,
-    },
-    {
-      name: 'Hotel Pet Friendly Recoleta',
-      category: 'hotel',
-      rating: 4.4,
-      address: 'Entorno Bellavista-Recoleta',
-      lat: -33.4187,
-      lng: -70.6423,
-    },
-  ];
+  private places: Place[] = [];
 
   protected readonly mapStatus = signal<MapStatusState>({
     message: 'Cargando mapa real de OpenStreetMap...',
@@ -205,7 +149,7 @@ export class MapPageComponent implements AfterViewInit {
 
   ngAfterViewInit(): void {
     this.initializeMap();
-    this.addClusteredMarkers();
+    this.loadPlacesAndRender();
 
     this.destroyRef.onDestroy(() => {
       this.clearStatusDismissTimeout();
@@ -215,6 +159,28 @@ export class MapPageComponent implements AfterViewInit {
       this.map?.remove();
       this.map = null;
     });
+  }
+
+  private loadPlacesAndRender(): void {
+    this.placeCatalog
+      .getPlaces()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (places) => {
+          this.places = places;
+          this.addClusteredMarkers();
+
+          if (places.length === 0) {
+            this.setStatusInfo('Catalogo cargado sin lugares disponibles por ahora.');
+            return;
+          }
+
+          this.setStatusSuccess(`Catalogo cargado con ${places.length} lugares pet friendly.`);
+        },
+        error: () => {
+          this.setStatusError('No pudimos cargar el catalogo de lugares.');
+        },
+      });
   }
 
   protected onSearchInput(query: string): void {
@@ -515,6 +481,8 @@ export class MapPageComponent implements AfterViewInit {
       return;
     }
 
+    this.clusterLayer?.remove();
+
     this.clusterLayer = L.markerClusterGroup({
       maxClusterRadius: 46,
       showCoverageOnHover: false,
@@ -648,7 +616,7 @@ export class MapPageComponent implements AfterViewInit {
     });
   }
 
-  private buildPopup(place: PlaceMarker): string {
+  private buildPopup(place: Place): string {
     return `
       <div class="pawspot-popup">
         <strong>${place.name}</strong>

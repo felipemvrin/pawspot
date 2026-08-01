@@ -12,8 +12,8 @@
         <input
           class="search-shell__input"
           type="search"
-          placeholder="Buscar parques, cafés o veterinarias que permitan tu amigo peludito"
-          aria-label="Buscar lugares en el mapa"
+          placeholder="Busca parques, cafés o veterinarias que permitan tu amigo peludito"
+          aria-label="Busca lugares en el mapa"
           [value]="searchQuery()"
           (input)="onSearchInput($any($event.target).value)"
           (keydown.enter)="onSearchSubmit($event)"

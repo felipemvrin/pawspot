@@ -166,6 +166,35 @@
   background: var(--color-primary);
   color: #fff;
   border-color: transparent;
+  box-shadow: 0 10px 24px rgba(47, 133, 90, 0.3);
+}
+
+.search-shell__icon-button--primary:hover {
+  background: color-mix(in srgb, var(--color-primary) 88%, #000000 12%);
+  border-color: color-mix(in srgb, var(--color-primary) 70%, #000000 30%);
+  box-shadow: 0 14px 28px rgba(47, 133, 90, 0.36);
+}
+
+.search-shell__icon-button--primary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 32%, #ffffff 68%);
+  outline-offset: 3px;
+  background: color-mix(in srgb, var(--color-primary) 92%, #000000 8%);
+}
+
+.search-shell__icon-button--primary:active {
+  transform: translateY(0);
+  background: color-mix(in srgb, var(--color-primary) 82%, #000000 18%);
+  box-shadow: 0 8px 18px rgba(47, 133, 90, 0.28);
+}
+
+.search-shell__icon-button--primary:disabled,
+.search-shell__icon-button--primary[disabled] {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--color-primary) 50%, #94a3b8 50%);
+  box-shadow: none;
 }
 
 .filter-chips {

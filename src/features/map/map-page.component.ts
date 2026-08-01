@@ -125,7 +125,7 @@ export class MapPageComponent implements AfterViewInit {
     petFriendly: { emoji: '🐶', color: '#4D96FF', label: 'Pet friendly' },
     veterinary: { emoji: '🏥', color: '#FF6B6B', label: 'Veterinaria' },
     trail: { emoji: '🥾', color: '#2E8B57', label: 'Sendero' },
-    hotel: { emoji: '🏨', color: '#8B5CF6', label: 'Hotel pet friendly' },
+    hotel: { emoji: '🏨', color: '#8B5CF6', label: 'Hotel' },
     shopping: { emoji: '🛒', color: '#FFD700', label: 'Tienda mascotas' },
     hairSalon: { emoji: '✂️', color: '#FF69B4', label: 'Peluquería canina' },
   };
@@ -157,7 +157,7 @@ export class MapPageComponent implements AfterViewInit {
     { label: '🏥 Veterinaria', ariaLabel: 'Filter veterinary clinics', token: 'veterinary' },
     { label: '🛒 Tienda Mascotas', ariaLabel: 'Filter pet stores', token: 'shopping' },
     { label: '✂️ Peluquería Canina', ariaLabel: 'Filter dog grooming', token: 'hairSalon' },
-    { label: '🏨 Hotel Pet Friendly', ariaLabel: 'Filter pet friendly hotels', token: 'hotel' },
+    { label: '🏨 Hotel', ariaLabel: 'Filter pet friendly hotels', token: 'hotel' },
     { label: '⭐ Mejor valorados', ariaLabel: 'Filter top rated places', token: 'topRated' },
     { label: '📍 Cerca de mí', ariaLabel: 'Filter places near me', token: 'nearby' },
   ]);

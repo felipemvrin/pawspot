@@ -34,6 +34,12 @@
   filter: drop-shadow(0 10px 18px rgba(19, 56, 40, 0.2));
 }
 
+.splash__message {
+  font-size: clamp(1rem, 2.2vw, 1.2rem);
+  text-align: center;
+  color: var(--color-text);
+}
+
 .splash__progress {
   width: min(260px, 90%);
   height: 8px;

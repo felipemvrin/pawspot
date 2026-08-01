@@ -12,7 +12,7 @@
         <input
           class="search-shell__input"
           type="search"
-          placeholder="Busca parques, cafés o veterinarias que permitan tu amigo peludito"
+          placeholder="Busca parques, cafés o restaurantes que permitan a tu amigo peludito"
           aria-label="Busca lugares en el mapa"
           [value]="searchQuery()"
           (input)="onSearchInput($any($event.target).value)"
@@ -53,8 +53,12 @@
           <button
             class="filter-chip"
             type="button"
+            [class.filter-chip--active]="isQuickFilterActive(filter.token)"
+            [class.filter-chip--muted]="isQuickFilterMuted(filter.token)"
             [attr.aria-label]="filter.ariaLabel"
+            [attr.aria-pressed]="isQuickFilterActive(filter.token)"
             [attr.data-filter-token]="filter.token"
+            (click)="toggleQuickFilter(filter.token)"
           >
             {{ filter.label }}
           </button>
@@ -127,18 +131,28 @@
 
     @if (isMapLegendVisible()) {
       <section class="map-legend" aria-label="Categorías del mapa">
+        <button
+          class="map-legend__close"
+          type="button"
+          aria-label="Cerrar leyenda"
+          (click)="closeMapLegend()"
+        >
+          ×
+        </button>
+
         <h1 class="map-legend__title">PawSpot</h1>
         <p class="map-legend__subtitle">
           Hay {{ nearbyPlacesCount() }}
-          <em>{{ nearbyPlacesCount() === 1 ? 'spot' : 'spots' }}</em> cercanos para explorar
+          <span>{{ nearbyPlacesCount() === 1 ? 'spot' : 'spots' }}</span> cercanos para explorar
           opciones con tu amigo peludito.
         </p>
 
         <div class="map-legend__items">
-          <span>🌳 Parque</span>
-          <span>☕ Café</span>
-          <span>🏥 Veterinaria</span>
-          <span>🏨 Hotel pet friendly</span>
+          @for (item of legendItems(); track item.category) {
+            <span class="map-legend__item" [attr.data-category]="item.category">
+              {{ item.emoji }} {{ item.label }}
+            </span>
+          }
         </div>
       </section>
     }

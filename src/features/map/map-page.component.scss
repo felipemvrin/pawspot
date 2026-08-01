@@ -77,8 +77,8 @@
 }
 
 .search-shell__logo {
-  width: clamp(90px, 11vw, 132px);
-  min-width: 90px;
+  width: clamp(95px, 11.55vw, 139px);
+  min-width: 95px;
   height: auto;
   object-fit: contain;
   flex: 0 0 auto;
@@ -222,6 +222,16 @@
   background: color-mix(in srgb, var(--chip-accent) 34%, var(--color-surface-elevated));
 }
 
+.filter-chip--active {
+  border-color: color-mix(in srgb, var(--chip-accent) 70%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--chip-accent) 40%, var(--color-surface-elevated));
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.14);
+}
+
+.filter-chip--muted {
+  opacity: 0.45;
+}
+
 .filter-chip[data-filter-token='park'] {
   --chip-accent: var(--category-park);
 }
@@ -361,6 +371,7 @@
 }
 
 .map-legend {
+  position: relative;
   left: 1rem;
   bottom: 1rem;
   width: min(25rem, calc(100% - 2rem));
@@ -370,6 +381,35 @@
   background: var(--color-surface-elevated);
   backdrop-filter: blur(18px);
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.1);
+}
+
+.map-legend__close {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-background) 74%, transparent);
+  color: var(--color-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.map-legend__close:hover {
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  border-color: var(--color-border-strong);
+  color: var(--color-foreground);
+  transform: translateY(-1px);
 }
 
 .map-legend__title {
@@ -392,13 +432,50 @@
   margin-top: 1rem;
 }
 
-.map-legend__items span {
+.map-legend__item {
+  --legend-accent: var(--category-park);
   padding: 0.3rem 0.5rem;
   border-radius: 999px;
   font-size: 0.92rem;
   line-height: 1.15;
-  background: color-mix(in srgb, var(--color-background) 72%, transparent);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--legend-accent) 22%, var(--color-surface-elevated));
+  border: 1px solid color-mix(in srgb, var(--legend-accent) 45%, var(--color-border));
+}
+
+.map-legend__item[data-category='park'] {
+  --legend-accent: var(--category-park);
+}
+
+.map-legend__item[data-category='trail'] {
+  --legend-accent: var(--category-trail);
+}
+
+.map-legend__item[data-category='cafe'] {
+  --legend-accent: var(--category-cafe);
+}
+
+.map-legend__item[data-category='restaurant'] {
+  --legend-accent: var(--category-restaurant);
+}
+
+.map-legend__item[data-category='veterinary'] {
+  --legend-accent: var(--category-veterinary);
+}
+
+.map-legend__item[data-category='shopping'] {
+  --legend-accent: var(--category-shopping);
+}
+
+.map-legend__item[data-category='hairSalon'] {
+  --legend-accent: var(--category-hair-salon);
+}
+
+.map-legend__item[data-category='hotel'] {
+  --legend-accent: var(--category-hotel);
+}
+
+.map-legend__item[data-category='petFriendly'] {
+  --legend-accent: var(--category-pet-friendly);
 }
 
 .sr-only {

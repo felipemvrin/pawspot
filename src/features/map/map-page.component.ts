@@ -45,6 +45,13 @@ type SearchSuggestion = {
 
 type NearbySource = 'search' | 'location';
 
+type LegendItem = {
+  category: PlaceCategory;
+  label: string;
+  emoji: string;
+  count: number;
+};
+
 @Component({
   selector: 'app-map-page',
   standalone: true,
@@ -55,6 +62,8 @@ type NearbySource = 'search' | 'location';
 export class MapPageComponent implements AfterViewInit {
   private static readonly STATUS_AUTO_DISMISS_MS = 6000;
   private static readonly RECOLETA_CENTER: [number, number] = [-33.4166, -70.6438];
+  private static readonly NEARBY_THRESHOLD_METERS = 2000;
+  private static readonly TOP_RATED_THRESHOLD = 4.5;
 
   @ViewChild('mapContainer', { static: true })
   private readonly mapContainer!: ElementRef<HTMLDivElement>;
@@ -106,18 +115,22 @@ export class MapPageComponent implements AfterViewInit {
   private searchAbortController: AbortController | null = null;
   private lastKnownUserLocation: L.LatLng | null = null;
   private searchResultMarker: L.Marker | null = null;
-  private readonly categoryMetadata: Record<PlaceCategory, { emoji: string; color: string }> = {
-    park: { emoji: '🌳', color: '#7ED957' },
-    restaurant: { emoji: '🍽', color: '#FF9F43' },
-    cafe: { emoji: '☕', color: '#C89B72' },
-    petFriendly: { emoji: '🐶', color: '#4D96FF' },
-    veterinary: { emoji: '🏥', color: '#FF6B6B' },
-    trail: { emoji: '🥾', color: '#2E8B57' },
-    hotel: { emoji: '🏨', color: '#8B5CF6' },
-    shopping: { emoji: '🛒', color: '#FFD700' },
-    hairSalon: { emoji: '✂️', color: '#FF69B4' },
+  private readonly categoryMetadata: Record<
+    PlaceCategory,
+    { emoji: string; color: string; label: string }
+  > = {
+    park: { emoji: '🌳', color: '#7ED957', label: 'Parque' },
+    restaurant: { emoji: '🍽', color: '#FF9F43', label: 'Restaurante' },
+    cafe: { emoji: '☕', color: '#C89B72', label: 'Café' },
+    petFriendly: { emoji: '🐶', color: '#4D96FF', label: 'Pet friendly' },
+    veterinary: { emoji: '🏥', color: '#FF6B6B', label: 'Veterinaria' },
+    trail: { emoji: '🥾', color: '#2E8B57', label: 'Sendero' },
+    hotel: { emoji: '🏨', color: '#8B5CF6', label: 'Hotel pet friendly' },
+    shopping: { emoji: '🛒', color: '#FFD700', label: 'Tienda mascotas' },
+    hairSalon: { emoji: '✂️', color: '#FF69B4', label: 'Peluquería canina' },
   };
   private places: Place[] = [];
+  private filteredPlaces: Place[] = [];
 
   protected readonly mapStatus = signal<MapStatusState>({
     message: 'Cargando mapa real de OpenStreetMap...',
@@ -133,6 +146,8 @@ export class MapPageComponent implements AfterViewInit {
   protected readonly isSearchingSuggestions = signal(false);
   protected readonly isMapLegendVisible = signal(false);
   protected readonly nearbyPlacesCount = signal(0);
+  protected readonly legendItems = signal<LegendItem[]>([]);
+  protected readonly activeQuickFilterTokens = signal<Set<QuickFilterToken>>(new Set());
 
   protected readonly quickFilters = signal<QuickFilter[]>([
     { label: '🌳 Parques', ariaLabel: 'Filter parks', token: 'park' },
@@ -168,7 +183,8 @@ export class MapPageComponent implements AfterViewInit {
       .subscribe({
         next: (places) => {
           this.places = places;
-          this.addClusteredMarkers();
+          this.filteredPlaces = places;
+          this.addClusteredMarkers(this.filteredPlaces);
 
           if (places.length === 0) {
             this.setStatusInfo('Catalogo cargado sin lugares disponibles por ahora.');
@@ -321,7 +337,33 @@ export class MapPageComponent implements AfterViewInit {
       return;
     }
 
-    this.focusMarkers();
+    this.setStatusInfo('Filtros rápidos visibles.');
+  }
+
+  protected toggleQuickFilter(token: QuickFilterToken): void {
+    const nextTokens = new Set(this.activeQuickFilterTokens());
+
+    if (nextTokens.has(token)) {
+      nextTokens.delete(token);
+    } else {
+      nextTokens.add(token);
+    }
+
+    this.activeQuickFilterTokens.set(nextTokens);
+    this.applyQuickFilters();
+  }
+
+  protected closeMapLegend(): void {
+    this.isMapLegendVisible.set(false);
+  }
+
+  protected isQuickFilterActive(token: QuickFilterToken): boolean {
+    return this.activeQuickFilterTokens().has(token);
+  }
+
+  protected isQuickFilterMuted(token: QuickFilterToken): boolean {
+    const activeTokens = this.activeQuickFilterTokens();
+    return activeTokens.size > 0 && !activeTokens.has(token);
   }
 
   private focusMarkers(): void {
@@ -476,7 +518,7 @@ export class MapPageComponent implements AfterViewInit {
     }).addTo(this.map as L.Map);
   }
 
-  private addClusteredMarkers(): void {
+  private addClusteredMarkers(placesToRender: Place[]): void {
     if (!this.map) {
       return;
     }
@@ -489,7 +531,7 @@ export class MapPageComponent implements AfterViewInit {
       spiderfyOnMaxZoom: true,
     });
 
-    this.places.forEach((place) => {
+    placesToRender.forEach((place) => {
       const marker = L.marker([place.lat, place.lng], {
         icon: this.buildCategoryIcon(place.category),
       }).bindPopup(this.buildPopup(place));
@@ -578,14 +620,16 @@ export class MapPageComponent implements AfterViewInit {
   }
 
   private updateLegendFromNearbyResults(center: L.LatLng, source: NearbySource): void {
-    const nearbyCount = this.getNearbyPlacesCount(center);
-    this.nearbyPlacesCount.set(nearbyCount);
+    const nearbyPlaces = this.getNearbyPlaces(center);
+    this.nearbyPlacesCount.set(nearbyPlaces.length);
 
-    if (nearbyCount > 0) {
+    if (nearbyPlaces.length > 0) {
+      this.legendItems.set(this.buildLegendItems(nearbyPlaces));
       this.isMapLegendVisible.set(true);
       return;
     }
 
+    this.legendItems.set([]);
     this.isMapLegendVisible.set(false);
 
     if (source === 'search') {
@@ -596,12 +640,93 @@ export class MapPageComponent implements AfterViewInit {
     this.setStatusInfo('No encontramos lugares cercanos a tu ubicación.');
   }
 
-  private getNearbyPlacesCount(center: L.LatLng): number {
-    const nearbyThresholdMeters = 2000;
+  private getNearbyPlaces(center: L.LatLng): Place[] {
+    return this.filteredPlaces.filter(
+      (place) =>
+        center.distanceTo(L.latLng(place.lat, place.lng)) <=
+        MapPageComponent.NEARBY_THRESHOLD_METERS,
+    );
+  }
 
-    return this.places.filter(
-      (place) => center.distanceTo(L.latLng(place.lat, place.lng)) <= nearbyThresholdMeters,
-    ).length;
+  private applyQuickFilters(): void {
+    this.filteredPlaces = this.getFilteredPlaces();
+    this.addClusteredMarkers(this.filteredPlaces);
+
+    if (!this.map) {
+      return;
+    }
+
+    const legendCenter = this.lastKnownUserLocation ?? this.map.getCenter();
+    this.updateLegendFromNearbyResults(legendCenter, 'location');
+
+    if (this.filteredPlaces.length === 0) {
+      this.setStatusInfo('No hay lugares para los filtros seleccionados.');
+      return;
+    }
+
+    this.setStatusInfo(`Mostrando ${this.filteredPlaces.length} lugares según tus filtros.`);
+  }
+
+  private getFilteredPlaces(): Place[] {
+    const activeTokens = this.activeQuickFilterTokens();
+    if (activeTokens.size === 0) {
+      return this.places;
+    }
+
+    const selectedCategories = new Set(
+      Array.from(activeTokens).filter((token): token is PlaceCategory =>
+        this.isCategoryToken(token),
+      ),
+    );
+
+    let result = this.places;
+
+    if (selectedCategories.size > 0) {
+      result = result.filter((place) => selectedCategories.has(place.category));
+    }
+
+    if (activeTokens.has('topRated')) {
+      result = result.filter((place) => place.rating >= MapPageComponent.TOP_RATED_THRESHOLD);
+    }
+
+    if (activeTokens.has('nearby')) {
+      const referencePoint = this.lastKnownUserLocation ?? this.map?.getCenter() ?? null;
+      if (referencePoint) {
+        result = result.filter(
+          (place) =>
+            referencePoint.distanceTo(L.latLng(place.lat, place.lng)) <=
+            MapPageComponent.NEARBY_THRESHOLD_METERS,
+        );
+      }
+    }
+
+    return result;
+  }
+
+  private isCategoryToken(token: QuickFilterToken): token is PlaceCategory {
+    return token !== 'topRated' && token !== 'nearby';
+  }
+
+  private buildLegendItems(nearbyPlaces: Place[]): LegendItem[] {
+    const categoryCounts = new Map<PlaceCategory, number>();
+
+    nearbyPlaces.forEach((place) => {
+      const currentCount = categoryCounts.get(place.category) ?? 0;
+      categoryCounts.set(place.category, currentCount + 1);
+    });
+
+    return Array.from(categoryCounts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([category, count]) => {
+        const categoryInfo = this.categoryMetadata[category];
+
+        return {
+          category,
+          count,
+          emoji: categoryInfo.emoji,
+          label: categoryInfo.label,
+        };
+      });
   }
 
   private buildCategoryIcon(category: PlaceCategory): L.DivIcon {

@@ -43,6 +43,11 @@ type SearchSuggestion = {
   lng: number;
 };
 
+type SearchSuggestionCacheEntry = {
+  expiresAt: number;
+  suggestions: SearchSuggestion[];
+};
+
 type NearbySource = 'search' | 'location';
 
 type LegendItem = {
@@ -115,6 +120,7 @@ export class MapPageComponent implements AfterViewInit {
   private searchAbortController: AbortController | null = null;
   private lastKnownUserLocation: L.LatLng | null = null;
   private searchResultMarker: L.Marker | null = null;
+  private readonly searchSuggestionCache = new Map<string, SearchSuggestionCacheEntry>();
   private readonly categoryMetadata: Record<
     PlaceCategory,
     { emoji: string; color: string; label: string }
@@ -544,14 +550,27 @@ export class MapPageComponent implements AfterViewInit {
 
   private async fetchSearchSuggestions(query: string): Promise<void> {
     this.cancelSearchRequest();
+    const center = this.lastKnownUserLocation ?? this.map?.getCenter() ?? L.latLng(4.711, -74.0721);
+    const delta = 0.2;
+    const viewbox = `${center.lng - delta},${center.lat + delta},${center.lng + delta},${center.lat - delta}`;
+    const cacheKey = `${query.toLowerCase()}|${viewbox}`;
+    const cachedResult = this.searchSuggestionCache.get(cacheKey);
+
+    if (cachedResult && cachedResult.expiresAt > Date.now()) {
+      this.searchSuggestions.set(cachedResult.suggestions);
+      this.isSuggestionsOpen.set(cachedResult.suggestions.length > 0);
+
+      if (cachedResult.suggestions.length === 0) {
+        this.setStatusInfo('No encontramos sugerencias cercanas para ese texto.');
+      }
+
+      this.isSearchingSuggestions.set(false);
+      return;
+    }
+
     this.searchAbortController = new AbortController();
 
     try {
-      const center =
-        this.lastKnownUserLocation ?? this.map?.getCenter() ?? L.latLng(4.711, -74.0721);
-      const delta = 0.2;
-      const viewbox = `${center.lng - delta},${center.lat + delta},${center.lng + delta},${center.lat - delta}`;
-
       const searchParams = new URLSearchParams({
         q: query,
         format: 'jsonv2',
@@ -591,6 +610,10 @@ export class MapPageComponent implements AfterViewInit {
 
       this.searchSuggestions.set(suggestions);
       this.isSuggestionsOpen.set(suggestions.length > 0);
+      this.searchSuggestionCache.set(cacheKey, {
+        expiresAt: Date.now() + 45000,
+        suggestions,
+      });
 
       if (suggestions.length === 0) {
         this.setStatusInfo('No encontramos sugerencias cercanas para ese texto.');

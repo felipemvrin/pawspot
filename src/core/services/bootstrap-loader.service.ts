@@ -1,6 +1,4 @@
-import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
 
 import { FavoritesService } from './favorites.service';
 import { PlaceCatalogService } from './place-catalog.service';
@@ -14,7 +12,6 @@ export class BootstrapLoaderService {
   private loadPromise: Promise<void> | null = null;
 
   constructor(
-    private readonly http: HttpClient,
     private readonly placeCatalog: PlaceCatalogService,
     private readonly favorites: FavoritesService,
   ) {}
@@ -24,13 +21,10 @@ export class BootstrapLoaderService {
       return this.loadPromise;
     }
 
-    const splashAnimationTask = firstValueFrom(this.http.get('/assets/pet-lovers.json')).catch(
-      () => undefined,
-    );
     const placesTask = this.placeCatalog.preloadCriticalData();
     const favoritesTask = Promise.resolve().then(() => this.favorites.loadFromStorage());
 
-    this.loadPromise = Promise.all([splashAnimationTask, placesTask, favoritesTask])
+    this.loadPromise = Promise.all([placesTask, favoritesTask])
       .then(() => {
         this.ready.set(true);
       })

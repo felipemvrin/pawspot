@@ -7,6 +7,15 @@
 
 PawSpot is a map-first Angular application for discovering pet-friendly places with a modern mobile-first UI.
 
+## App Preview
+
+<p align="center">
+  <img src="./docs/screens/1.png" width="180">
+  <img src="./docs/screens/2.png" width="180">
+  <img src="./docs/screens/3.png" width="180">
+  <img src="./docs/screens/4.png" width="180">
+</p>
+
 ## Highlights
 
 - Angular standalone architecture with lazy loading

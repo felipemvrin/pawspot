@@ -1,0 +1,15 @@
+<main class="splash" role="status" aria-live="polite" aria-label="Cargando PawSpot">
+  <section class="splash__card">
+    <div #animationHost class="splash__animation" aria-hidden="true"></div>
+
+    <img class="splash__logo" src="/assets/logo-pawspot.svg" alt="PawSpot" />
+
+    <p class="splash__message text--center" aria-hidden="true">
+      Encuentra parques, cafeterías, restaurantes y servicios pet friendly cerca de ti.
+    </p>
+
+    <div class="splash__progress" aria-hidden="true">
+      <span class="splash__progress-fill" [style.width.%]="progress()"></span>
+    </div>
+  </section>
+</main>

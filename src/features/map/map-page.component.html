@@ -3,40 +3,70 @@
     <div #mapContainer class="map-canvas" aria-label="Mapa real de OpenStreetMap"></div>
 
     <header class="search-shell" aria-label="Buscador principal">
-      <button
-        class="search-shell__icon-button"
-        type="button"
-        aria-label="Abrir historial de búsqueda"
-      >
-        Historial
-      </button>
+      <div class="search-shell__brand" aria-label="Marca PawSpot">
+        <img class="search-shell__logo" src="/assets/logo-pawspot.svg" alt="Logo PawSpot" />
+      </div>
+
+      <span class="search-shell__separator" aria-hidden="true"></span>
 
       <label class="search-shell__input-wrapper">
         <span class="sr-only">Buscar lugares</span>
         <input
           class="search-shell__input"
           type="search"
-          placeholder="Buscar parques, cafés, playas o veterinarias"
-          aria-label="Buscar lugares en el mapa"
+          placeholder="Busca parques, cafés o restaurantes que permitan a tu amigo peludito"
+          aria-label="Busca lugares en el mapa"
+          [value]="searchQuery()"
+          (input)="onSearchInput($any($event.target).value)"
+          (keydown.enter)="onSearchSubmit($event)"
+          (blur)="onSearchBlur()"
         />
+
+        @if (isSuggestionsOpen()) {
+          <ul class="search-suggestions" aria-label="Sugerencias cercanas">
+            @for (suggestion of searchSuggestions(); track suggestion.label) {
+              <li>
+                <button
+                  class="search-suggestions__item"
+                  type="button"
+                  (mousedown)="selectSuggestion(suggestion)"
+                >
+                  {{ suggestion.label }}
+                </button>
+              </li>
+            }
+          </ul>
+        }
       </label>
 
       <button
         class="search-shell__icon-button search-shell__icon-button--primary"
         type="button"
-        aria-label="Abrir favoritos"
+        aria-label="Buscar Spots"
+        (click)="onSearchSubmit()"
       >
-        Favoritos
+        {{ isSearchingSuggestions() ? 'Buscando...' : 'Buscar' }}
       </button>
     </header>
 
-    <section class="filter-chips" aria-label="Filtros rápidos">
-      @for (filter of quickFilters(); track filter.label) {
-        <button class="filter-chip" type="button" [attr.aria-label]="filter.ariaLabel">
-          {{ filter.label }}
-        </button>
-      }
-    </section>
+    @if (areFiltersVisible()) {
+      <section class="filter-chips" aria-label="Filtros rápidos">
+        @for (filter of quickFilters(); track filter.label) {
+          <button
+            class="filter-chip"
+            type="button"
+            [class.filter-chip--active]="isQuickFilterActive(filter.token)"
+            [class.filter-chip--muted]="isQuickFilterMuted(filter.token)"
+            [attr.aria-label]="filter.ariaLabel"
+            [attr.aria-pressed]="isQuickFilterActive(filter.token)"
+            [attr.data-filter-token]="filter.token"
+            (click)="toggleQuickFilter(filter.token)"
+          >
+            {{ filter.label }}
+          </button>
+        }
+      </section>
+    }
 
     <aside class="floating-actions" aria-label="Controles del mapa">
       <button
@@ -49,12 +79,14 @@
       </button>
 
       <button
-        class="floating-action"
+        class="floating-action floating-action--filters"
         type="button"
-        aria-label="Mostrar resultados en el mapa"
-        (click)="focusMarkers()"
+        [attr.aria-label]="
+          areFiltersVisible() ? 'Ocultar filtros rápidos' : 'Mostrar filtros rápidos'
+        "
+        (click)="toggleFilters()"
       >
-        Filtros
+        {{ areFiltersVisible() ? 'Ocultar filtros' : 'Filtros' }}
       </button>
 
       <button
@@ -63,7 +95,7 @@
         aria-label="Cambiar capa del mapa"
         (click)="toggleLayers()"
       >
-        Capas
+        Estilo de mapa
       </button>
 
       <div class="floating-zoom" aria-label="Controles de zoom">
@@ -86,22 +118,45 @@
       </div>
     </aside>
 
-    <p class="map-status" aria-live="polite">{{ mapStatus() }}</p>
-
-    <section class="map-legend" aria-label="Categorías del mapa">
-      <h1 class="map-legend__title">PawSpot</h1>
-      <p class="map-legend__subtitle">
-        El mapa vive aquí. Las capas, filtros y resultados flotan encima.
+    @if (isStatusVisible()) {
+      <p
+        #mapStatusElement
+        class="map-status"
+        [class.map-status--success]="mapStatus().tone === 'success'"
+        [class.map-status--error]="mapStatus().tone === 'error'"
+        [class.map-status--leaving]="isStatusLeaving()"
+        aria-live="polite"
+      >
+        {{ mapStatus().message }}
       </p>
+    }
 
-      <div class="map-legend__items">
-        <span>🌳 Parque</span>
-        <span>🍽 Restaurante</span>
-        <span>☕ Café</span>
-        <span>🐶 Pet Friendly</span>
-        <span>🐾 Veterinaria</span>
-        <span>🏖 Playa</span>
-      </div>
-    </section>
+    @if (isMapLegendVisible()) {
+      <section class="map-legend" aria-label="Categorías del mapa">
+        <button
+          class="map-legend__close"
+          type="button"
+          aria-label="Cerrar leyenda"
+          (click)="closeMapLegend()"
+        >
+          ×
+        </button>
+
+        <h1 class="map-legend__title">PawSpot</h1>
+        <p class="map-legend__subtitle">
+          Hay {{ nearbyPlacesCount() }}
+          <span>{{ nearbyPlacesCount() === 1 ? 'spot' : 'spots' }}</span> cercanos para explorar
+          opciones con tu amigo peludito.
+        </p>
+
+        <div class="map-legend__items">
+          @for (item of legendItems(); track item.category) {
+            <span class="map-legend__item" [attr.data-category]="item.category">
+              {{ item.emoji }} {{ item.label }}
+            </span>
+          }
+        </div>
+      </section>
+    }
   </section>
 </main>
